@@ -1,0 +1,20 @@
+{
+  "name": "browser-jev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bin/bj run test/smoke.ts"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "devtools-protocol": "^0.0.1701330",
+    "typescript": "^7.0.2"
+  }
+}
