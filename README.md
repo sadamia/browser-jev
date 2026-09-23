@@ -62,7 +62,7 @@ bin/bj run test/extras.ts
 ```
 bj run <file|->  [--out dir] [--no-check] [--headed]   run a script (- reads stdin)
 bj snapshot [url] [--all]                              list the page's interactive elements
-bj login <url> · bj login --finish                     one visible window for a human to sign in
+bj login <url>                                         one visible plain window (no DevTools port) for a human to sign in; waits, then returns to headless signed in
 bj start | stop | status                               manage the background Chrome
 bj cache clear                                         forget cached element resolutions
 ```

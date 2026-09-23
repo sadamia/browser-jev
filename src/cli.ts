@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Browser } from "./browser.ts";
-import { browserStatus, stopBrowser } from "./chrome.ts";
+import { browserStatus, launchLoginWindow, stopBrowser, stopLoginWindow, waitForLogin } from "./chrome.ts";
 import { BjError } from "./errors.ts";
 import { Jev } from "./jev.ts";
 import type { RunContext } from "./page.ts";
@@ -18,8 +18,10 @@ const USAGE = `bj — typed browser automation over CDP with Jev decisions
 
   bj run <script.ts | ->  [--out <dir>] [--no-check] [--headed]   run a script (use - for stdin)
   bj snapshot [url] [--all]                                       print the working tab (interactive elements, or everything)
-  bj login <url>            open a visible window on the automation profile for a human to sign in
-  bj login --finish         save the signed-in cookies and return to headless
+  bj login <url>            open a plain visible window for a human to sign in, wait until they land back on
+                            the site (or close the window), then return to headless, signed in
+                            [--done <url-substring>] [--timeout <s>=600] [--no-wait]
+  bj login --finish         (after --no-wait) close the window, save cookies, return to headless
   bj start | stop | status  manage the background Chrome
   bj cache clear            forget cached element resolutions`;
 
@@ -131,18 +133,33 @@ async function main(): Promise<number> {
     }
     case "login": {
       if (flag(args, "--finish")) {
-        const browser = await Browser.connect(newContext(), { headed: true });
+        const wasOpen = await stopLoginWindow();
+        const browser = await Browser.connect(newContext());
         const saved = await browser.saveCookies();
         await browser.dispose();
-        await stopBrowser();
-        print(`saved ${saved} cookies; the next command relaunches headless and signed in`);
+        print(`${wasOpen ? "closed the login window; " : ""}saved ${saved} cookies; the browser is now headless and signed in`);
         return 0;
       }
-      if (!args[0]) throw new BjError("config", "bj login needs the URL to sign in at");
-      await stopBrowser();
-      const browser = await Browser.connect(newContext(), { headed: true, url: args[0] });
+      const done = flag(args, "--done", true) || undefined;
+      const timeoutMs = Number(flag(args, "--timeout", true) || 600) * 1000;
+      const url = args.find((a) => !a.startsWith("--"));
+      if (!url) throw new BjError("config", "bj login needs the URL to sign in at");
+      const { pid, baselineVisitId } = await launchLoginWindow(url);
+      if (flag(args, "--no-wait")) {
+        print("A plain Chrome window (no DevTools port, so sign-in pages accept it) is open on the automation profile. Ask the user to sign in there, then run: bj login --finish");
+        return 0;
+      }
+      process.stderr.write("A Chrome window is open; waiting for the user to sign in there...\n");
+      const how = await waitForLogin({ pid, url, done: typeof done === "string" ? done : undefined, timeoutMs, baselineVisitId });
+      if (how === "timeout") {
+        await stopLoginWindow();
+        throw new BjError("config", `no sign-in detected within ${timeoutMs / 1000}s; the window was closed. Rerun bj login, or pass --done <url-substring> if the signed-in page is not on ${url}`);
+      }
+      await stopLoginWindow();
+      const browser = await Browser.connect(newContext());
+      const saved = await browser.saveCookies();
       await browser.dispose();
-      print("A Chrome window is open on the automation profile. Ask the user to sign in there, then run: bj login --finish");
+      print({ ok: true, signedIn: how, cookies: saved, message: "the browser is now headless and signed in; run scripts normally" });
       return 0;
     }
     case "start": {
